@@ -80,6 +80,23 @@ class Trainer:
 
         return score, metrics
 
+    def compute_leader_reward(
+        self,
+        metrics
+    ):
+    
+        reward = 0
+    
+        reward += 0.5 * metrics["trade"]
+    
+        reward -= 1.0 * metrics["waste"]
+    
+        reward -= 0.2 * metrics["inventory"]
+    
+        reward += 0.3 * metrics["transform"]
+    
+        return reward
+
     def get_market_mechanism(self):
 
         if not hasattr(self.env, "t"):
