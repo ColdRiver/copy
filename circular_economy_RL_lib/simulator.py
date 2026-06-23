@@ -20,6 +20,12 @@ class Manufacturing_Simulator:
             setattr(self, key, value)
 
         self.surrogate_model = SurrogateModel()
+        self.market_mechanism = {
+            "spot_mult": 1.0,
+            "uc_mult": 1.0,
+            "tx_mult": 1.0,
+            "waste_penalty": 0.0
+        }
         
     def reset(self):
         """
