@@ -54,6 +54,11 @@ class Manufacturing_Simulator:
         self.uc_p = self.UC * uc_mult * self.spot_price
         
         self.tx_p = self.TX_P * tx_mult * self.spot_price
+        self.current_subsidies = np.zeros(self.num_commodities)
+
+        self.current_taxes = np.zeros(self.num_commodities)
+        
+        self.current_price_signals = np.ones(self.num_commodities)
 
         self.price = np.zeros(shape=individual_shape)
         self.waste_price = np.zeros(shape=individual_shape)
@@ -104,6 +109,31 @@ class Manufacturing_Simulator:
         #     getattr(self, key)[..., :self.history_length] = value
         ## Initialize the seller state values
         return self.get_seller_state()
+
+    def get_system_metrics(self):
+    
+        total_waste = np.sum(
+            self.waste_inv[:,:,self.t]
+        )
+    
+        total_inventory = np.sum(
+            self.inv[:,:,self.t]
+        )
+    
+        total_trade = np.sum(
+            self.actual_d[:,:,:,self.t]
+        )
+    
+        total_transform = np.sum(
+            self.tx_u[:,:,self.t]
+        )
+    
+        return {
+            "waste": total_waste,
+            "inventory": total_inventory,
+            "trade": total_trade,
+            "transform": total_transform
+        }
 
     def set_mechanism(self, mechanism):
         """
@@ -164,6 +194,19 @@ class Manufacturing_Simulator:
 
         return np.array(seller_states)
 
+    def apply_mechanism(self, mechanism):
+        """
+        mechanism contains:
+    
+        subsidies      shape (num_commodities,)
+        taxes          shape (num_commodities,)
+        price_signals  shape (num_commodities,)
+        """
+    
+        self.current_subsidies = mechanism["subsidies"]
+        self.current_taxes = mechanism["taxes"]
+        self.current_price_signals = mechanism["price_signals"]
+
     def action_conversion(self, keys, actions):
         """
         The actions input is the direct output of the RL agent.
@@ -192,7 +235,16 @@ class Manufacturing_Simulator:
         keys = ['price', 'waste_price']
         key_len_dict = {k: self.num_commodities for k in keys}
         seller_actions = self.action_conversion(key_len_dict, orig_seller_actions)
-
+        seller_actions["price"] = (
+            seller_actions["price"]
+            * self.current_price_signals.reshape(1, -1)
+        )
+        
+        seller_actions["waste_price"] = np.maximum(
+            seller_actions["waste_price"]
+            - self.current_subsidies.reshape(1, -1),
+            0.0
+        )
 
         #import pdb; pdb.set_trace()
         # Update the seller states with the seller actions
@@ -313,9 +365,14 @@ class Manufacturing_Simulator:
         
         e_reshape = self.price[:,:,self.t].reshape(1, self.num_agents, self.num_commodities)
         ew_reshape = self.waste_price[:,:,self.t].reshape(1, self.num_agents, self.num_commodities)
-        p_reshape = (
-            self.get_effective_spot_price()
-            .reshape(1, self.num_commodities)
+        effective_spot_price = (
+            self.spot_price[:, self.t]
+            * self.current_price_signals
+        )
+        
+        p_reshape = effective_spot_price.reshape(
+            1,
+            self.num_commodities
         )
 
         # print(self.actual_d[:,:,:,self.t].shape, (self.actual_d[:,:,:,self.t] * e_reshape).shape, self.spot_price[:,self.t].shape)
