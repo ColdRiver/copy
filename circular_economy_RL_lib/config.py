@@ -43,6 +43,11 @@ config = {
     'save_freq': 1,
     'seed': 2024,
     'price_factor' : 1.,
+    'upper_lr': 1e-4,
+    'upper_weight_profit': 1.0,
+    'upper_weight_wastewater': 0.1,
+    'upper_weight_inventory': 0.05,
+    'upper_weight_market_balance': 0.05,
 }
 
 
