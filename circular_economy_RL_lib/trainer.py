@@ -6,6 +6,8 @@ from agent import AgentPool
 from config import config, SELLER, BUYER, TRANSFORM, stages
 from logging import getLogger
 from utils import AverageMeter
+from market_authority import MarketAuthority
+import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 from utils import get_result_folder
@@ -30,6 +32,14 @@ class Trainer:
 
         self.env = Manufacturing_Simulator()
         self.agent_pool = AgentPool(self.num_agents, self.num_commodities, self.history_length)
+        self.market_authority = MarketAuthority(
+            self.num_commodities
+        )
+        
+        self.upper_optimizer = optim.Adam(
+            self.market_authority.parameters(),
+            lr=self.upper_lr
+        )
         if self.seed != None:
             # Check if our seed is valid first
             assert(type(self.seed) == int)
@@ -57,6 +67,46 @@ class Trainer:
 
     ## The three types agents make decisions in the simulator together and get their own observations
     ## Need to restore the information separately
+    def compute_upper_objective(self):
+    
+        metrics = self.env.get_upper_level_reward()
+    
+        score = (
+            self.upper_weight_profit * metrics["profit"]
+            - self.upper_weight_wastewater * metrics["wastewater"]
+            - self.upper_weight_inventory * metrics["waste_inventory"]
+            - self.upper_weight_market_balance * metrics["imbalance"]
+        )
+
+        return score, metrics
+
+    def get_market_mechanism(self):
+
+        if not hasattr(self.env, "t"):
+    
+            state = np.zeros(
+                self.num_commodities * 5,
+                dtype=np.float32
+            )
+    
+        else:
+    
+            state = self.env.get_market_state()
+    
+        state = torch.tensor(
+            state,
+            dtype=torch.float
+        )
+    
+        mechanism = self.market_authority(state)
+    
+        mechanism_np = {
+            k: float(v.detach().cpu())
+            for k, v in mechanism.items()
+        }
+    
+        return mechanism, mechanism_np
+    
     def rollout(self):
         # Let the following information be a list of three elements and each element can be the tensors for
         # seller, buyer, and transformation
@@ -66,6 +116,7 @@ class Trainer:
         batch_rews = [[] for _ in range(len(stages))]           # batch rewards
         batch_rtgs = [[] for _ in range(len(stages))]           # batch rewards-to-go
         batch_lens = []           # episodic lengths in batch
+        batch_mechanisms = []
 
         t = 0 # Keeps track of how many timesteps we've run so far this batch+
 
@@ -73,6 +124,15 @@ class Trainer:
             # Episodic data. Keeps track of rewards per episode, will get cleared
             # upon each new episode
             ep_rews = [[] for _ in range(len(stages))]
+            mechanism_torch, mechanism_np = \
+                self.get_market_mechanism()
+            
+            self.env.set_market_mechanism(
+                mechanism_np
+            )
+            batch_mechanisms.append(
+                mechanism_torch
+            )
             obs_s = self.env.reset()
             # Shape: seller observations - (n_agents, seller_state_size)
             done = False
@@ -163,7 +223,15 @@ class Trainer:
         # self.logger['batch_lens'] = batch_lens
 
         # Return the batch data
-        return batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_rets, batch_lens
+        return (
+            batch_obs,
+            batch_acts,
+            batch_log_probs,
+            batch_rtgs,
+            batch_rets,
+            batch_lens,
+            batch_mechanisms
+        )
 
     def compute_rtgs(self,batch_rews):
         """
@@ -215,7 +283,15 @@ class Trainer:
             score_AM = AverageMeter()
             loss_AM = AverageMeter()
 
-            batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_rets, batch_lens = self.rollout()
+            (
+                batch_obs,
+                batch_acts,
+                batch_log_probs,
+                batch_rtgs,
+                batch_rets,
+                batch_lens,
+                batch_mechanisms
+            ) = self.rollout()
 
             t_so_far += np.sum(batch_lens)
 
