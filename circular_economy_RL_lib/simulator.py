@@ -43,8 +43,17 @@ class Manufacturing_Simulator:
         pair_shape = (self.num_agents, self.num_agents, self.num_commodities, data_length)
 
         self.spot_price = np.zeros(shape=general_shape)
-        self.uc_p = np.zeros(shape=general_shape)
-        self.tx_p = np.zeros(shape=general_shape)
+        spot_mult = self.market_mechanism["spot_mult"]
+
+        uc_mult = self.market_mechanism["uc_mult"]
+        
+        tx_mult = self.market_mechanism["tx_mult"]
+        
+        self.spot_price *= spot_mult
+        
+        self.uc_p = self.UC * uc_mult * self.spot_price
+        
+        self.tx_p = self.TX_P * tx_mult * self.spot_price
 
         self.price = np.zeros(shape=individual_shape)
         self.waste_price = np.zeros(shape=individual_shape)
@@ -447,6 +456,30 @@ class Manufacturing_Simulator:
     def set_market_mechanism(self, mechanism):
 
         self.market_mechanism = mechanism
+
+
+    def get_market_state(self):
     
+        t = self.t
+    
+        avg_price = self.price[:, :, max(0, t-1)].mean(axis=0)
+    
+        avg_inv = self.inv[:, :, t].mean(axis=0)
+    
+        avg_waste_inv = self.waste_inv[:, :, t].mean(axis=0)
+    
+        avg_spot_price = self.spot_price[:, t]
+    
+        avg_tx = self.tx_u[:, :, max(0, t-1)].mean(axis=0)
+    
+        state = np.concatenate([
+            avg_price,
+            avg_inv,
+            avg_waste_inv,
+            avg_spot_price,
+            avg_tx
+        ])
+    
+        return state
     
        
