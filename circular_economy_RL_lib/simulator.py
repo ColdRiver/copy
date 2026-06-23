@@ -481,5 +481,24 @@ class Manufacturing_Simulator:
         ])
     
         return state
+
+    def get_upper_level_reward(self):
+
+        profit = np.sum(self.price * self.actual_d)
+    
+        wastewater = np.sum(self.wastewater)
+    
+        waste_inventory = np.sum(self.waste_inv)
+    
+        imbalance = np.var(
+            np.sum(self.inv[:, :, self.t], axis=1)
+        )
+    
+        return {
+            "profit": profit,
+            "wastewater": wastewater,
+            "waste_inventory": waste_inventory,
+            "imbalance": imbalance
+        }
     
        
