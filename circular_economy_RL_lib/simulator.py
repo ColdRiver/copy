@@ -77,6 +77,20 @@ class Manufacturing_Simulator:
 
         self.wastewater = np.zeros(shape=(1, 1, data_length))
 
+        # ===== Upper-level mechanism variables =====
+        
+        self.subsidy = np.zeros(
+            (self.num_commodities, data_length)
+        )
+        
+        self.tax = np.zeros(
+            (self.num_commodities, data_length)
+        )
+        
+        self.price_signal = np.ones(
+            (self.num_commodities, data_length)
+        )
+
         historical_data = init_historical_data()
         self.spot_price = np.repeat(historical_data['spot_price'], repeats=data_length, axis=1)
         self.uc_p = self.UC * self.spot_price
@@ -90,6 +104,20 @@ class Manufacturing_Simulator:
         #     getattr(self, key)[..., :self.history_length] = value
         ## Initialize the seller state values
         return self.get_seller_state()
+
+    def set_mechanism(self, mechanism):
+        """
+        mechanism:
+        {
+            'subsidy': (12,),
+            'tax': (12,),
+            'price_signal': (12,)
+        }
+        """
+    
+        self.subsidy[:, self.t] = mechanism["subsidy"]
+        self.tax[:, self.t] = mechanism["tax"]
+        self.price_signal[:, self.t] = mechanism["price_signal"]
     
     def get_seller_state(self):
         """
@@ -169,13 +197,38 @@ class Manufacturing_Simulator:
         #import pdb; pdb.set_trace()
         # Update the seller states with the seller actions
         for key, value in seller_actions.items():
-            getattr(self, key)[..., self.t] = value
+    
+            if key == "price":
+        
+                adjusted_price = (
+                    value *
+                    self.price_signal[:, self.t]
+                )
+        
+                self.price[..., self.t] = adjusted_price
+        
+            elif key == "waste_price":
+        
+                adjusted_waste_price = (
+                    value *
+                    (1.0 - self.subsidy[:, self.t])
+                )
+        
+                self.waste_price[..., self.t] = adjusted_waste_price
         # Get the buyer states and seller rewards
         # print(seller_actions)
         # raise NotImplementedError {'price': array(3, 7), 'waste_price': array(3, 7)}
         buyer_states = self.get_buyer_state(keys, seller_states, seller_actions)
         # seller_rewards = self.get_seller_reward()
         return buyer_states
+
+    def get_effective_spot_price(self):
+    
+        return (
+            self.spot_price[:, self.t]
+            *
+            self.price_signal[:, self.t]
+        )
     
     # def get_seller_reward(self):
     #     """
@@ -260,7 +313,10 @@ class Manufacturing_Simulator:
         
         e_reshape = self.price[:,:,self.t].reshape(1, self.num_agents, self.num_commodities)
         ew_reshape = self.waste_price[:,:,self.t].reshape(1, self.num_agents, self.num_commodities)
-        p_reshape = self.spot_price[:,self.t].reshape(1, self.num_commodities)
+        p_reshape = (
+            self.get_effective_spot_price()
+            .reshape(1, self.num_commodities)
+        )
 
         # print(self.actual_d[:,:,:,self.t].shape, (self.actual_d[:,:,:,self.t] * e_reshape).shape, self.spot_price[:,self.t].shape)
 
@@ -391,8 +447,22 @@ class Manufacturing_Simulator:
         tx_p = self.tx_p[:, self.t].reshape(1, self.num_commodities)
         # print(self.tx_p.shape, self.tx_u.shape, self.eco_u.shape, p_reshape.shape)
         # reward = np.sum(trans_actions['econ_quantity'], axis=0)
-        reward = np.sum(self.eco_u[:, :, self.t] * uc_p, axis=1)  # danger
-        reward -= np.sum(self.tx_u[:,:,self.t] * tx_p, axis=1)
+        tax_multiplier = (
+            1.0 +
+            self.tax[:, self.t]
+        )
+        
+        reward = np.sum(
+            self.eco_u[:,:,self.t] * uc_p,
+            axis=1
+        )
+        
+        reward -= np.sum(
+            self.tx_u[:,:,self.t]
+            * tx_p
+            * tax_multiplier.reshape(1,-1),
+            axis=1
+        )
         # print("3", reward)
         return reward * self.RWD_SCALE
 
@@ -499,6 +569,37 @@ class Manufacturing_Simulator:
             "wastewater": wastewater,
             "waste_inventory": waste_inventory,
             "imbalance": imbalance
+        }
+
+    def get_upper_level_metrics(self):
+    
+        total_waste = np.sum(
+            self.waste_inv[:, :, self.t]
+        )
+    
+        total_inventory = np.sum(
+            self.inv[:, :, self.t]
+        )
+    
+        total_recycled = np.sum(
+            self.tx_u[:, :, self.t]
+        )
+    
+        total_external_sales = np.sum(
+            self.eco_u[:, :, self.t]
+        )
+    
+        social_welfare = (
+            total_recycled
+            +
+            total_external_sales
+        )
+    
+        return {
+            "waste": total_waste,
+            "inventory": total_inventory,
+            "recycled": total_recycled,
+            "social_welfare": social_welfare
         }
     
        
