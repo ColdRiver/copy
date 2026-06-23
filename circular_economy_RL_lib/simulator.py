@@ -443,6 +443,10 @@ class Manufacturing_Simulator:
         #     import pdb;pdb.set_trace()
 
         return I_bar
+
+    def set_market_mechanism(self, mechanism):
+
+        self.market_mechanism = mechanism
     
     
        
